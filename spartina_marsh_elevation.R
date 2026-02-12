@@ -69,13 +69,16 @@ annotate_deseq_results <- function(deseq_result, phylo_object){
 }
 
 
-tst <- subset_samples(phylo_elevation, Sample.description %in% c("Sediment marsh", "Sediment dry")) %>% run_deseq("Sample.description")
+tst <- subset_samples(phylo_elevation, Sample.description %in% c("Sediment marsh", "Sediment dry")) %>% run_deseq("0 +Sample.description")
 
 resultsNames(tst)
 results(tst)
 
-
-tst_annot <- results(tst) %>% annotate_deseq_results(phylo_elevation)
+#results(dds, contrast = c("condition", "treated", "untreated"))
+#In this case, treated (numerator) is compared to untreated (denominator/baseline)
+# so a negative fold change means that something is lower in dry compared to marsh
+# so negative is seaward and positive is landweard
+tst_annot <- results(tst, contrast = list("Sample.descriptionSediment.dry", "Sample.descriptionSediment.marsh")) %>% annotate_deseq_results(phylo_elevation)
 
 
 
