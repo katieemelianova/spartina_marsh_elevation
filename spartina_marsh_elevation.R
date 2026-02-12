@@ -1,5 +1,9 @@
 
-
+library(patchwork)
+library(dplyr)
+library(magrittr)
+library(ggplot2)
+library(DESeq2)
 
 
 samplesheet <- readxl::read_xlsx("/Users/katieemelianova/Desktop/Spartina/JMF_results/Results_2025-04-30/JMF-2503-07.xlsx") %>% dplyr::select(`JMF sample ID`, `User sample ID`)
@@ -63,51 +67,112 @@ annotate_deseq_results <- function(deseq_result, phylo_object){
   annotated <- deseq_result %>% 
     data.frame() %>% 
     arrange(padj) %>% 
-    filter(padj < 0.05) %>% 
     rownames_to_column(var="amplicon") %>% 
     left_join(tax_table(phylo_object) %>% data.frame() %>% rownames_to_column(var="amplicon"))
 }
 
 
-tst <- subset_samples(phylo_elevation, Sample.description %in% c("Sediment marsh", "Sediment dry")) %>% run_deseq("0 +Sample.description")
 
-resultsNames(tst)
-results(tst)
+get_pos_neg_only_abundances <- function(da_annot){
+  all_negative <- da_annot %>% 
+    dplyr::select(log2FoldChange, Family) %>%
+    group_by(Family) %>%
+    summarise(all(log2FoldChange < 0)) %>%
+    filter(`all(log2FoldChange < 0)` == TRUE) %>% 
+    pull(Family)
+  
+  all_positive <- da_annot %>% 
+    dplyr::select(log2FoldChange, Family) %>%
+    group_by(Family) %>%
+    summarise(all(log2FoldChange > 0)) %>%
+    filter(`all(log2FoldChange > 0)` == TRUE) %>% 
+    pull(Family)
+  
+  return(c(all_negative, all_positive))
+}
+
+get_significant_highfreq_ASV <- function(da_annot, pval_threshold, fc_threshold){
+  sediment_da_annot %>%
+    filter(padj < pval_threshold& abs(log2FoldChange) > fc_threshold) %>%
+    group_by(Family) %>%
+    summarise(count=n()) %>%
+    filter(count > 1) %>% 
+    pull(Family)
+}
+
+################################################################
+#             sediment differential abundance.                 #
+################################################################
+
+sediment_da <- subset_samples(phylo_elevation, Sample.description %in% c("Sediment marsh", "Sediment dry")) %>% run_deseq("0 +Sample.description")
 
 #results(dds, contrast = c("condition", "treated", "untreated"))
 #In this case, treated (numerator) is compared to untreated (denominator/baseline)
 # so a negative fold change means that something is lower in dry compared to marsh
 # so negative is seaward and positive is landweard
-tst_annot <- results(tst, contrast = list("Sample.descriptionSediment.dry", "Sample.descriptionSediment.marsh")) %>% annotate_deseq_results(phylo_elevation)
+sediment_da_annot <- results(sediment_da, contrast = list("Sample.descriptionSediment.dry", "Sample.descriptionSediment.marsh")) %>% annotate_deseq_results(phylo_elevation)
 
 
+sediment_neg_pos <- sediment_da_annot %>% get_pos_neg_only_abundances() %>% get_significant_highfreq_ASV(0.05, 2)
 
 
-all_negative <- tst_annot %>% 
-  dplyr::select(log2FoldChange, Family) %>%
-  group_by(Family) %>%
-  summarise(all(log2FoldChange < 0)) %>%
-  filter(`all(log2FoldChange < 0)` == TRUE) %>% 
-  pull(Family)
+sediment_da_annot %>% get_pos_neg_only_abundances()
+sediment_da_annot %>% get_significant_highfreq_ASV(0.05, 2)
 
-all_positive <- tst_annot %>% 
-  dplyr::select(log2FoldChange, Family) %>%
-  group_by(Family) %>%
-  summarise(all(log2FoldChange > 0)) %>%
-  filter(`all(log2FoldChange > 0)` == TRUE) %>% 
-  pull(Family)
-
-
-# this should come up with no overlap (sanity check)
-intersect(all_negative, all_positive)
-
-tst_annot %>% 
+#### TO DO: plot only DA ASVs where more than one ASV per family
+sediment_plot <- sediment_da_annot %>% 
   dplyr::select(log2FoldChange, Family) %>% 
   drop_na() %>%
-  filter(Family %in% c(all_negative, all_positive)) %>%
-  mutate(whatever = case_when(log2FoldChange < 0 ~ "landward",
-                   log2FoldChange > 0 ~ "seaward")) %>%
-  ggplot(aes(x=reorder(Family, log2FoldChange), y=log2FoldChange, fill=whatever)) + 
+  filter(Family %in% sediment_neg_pos & abs(log2FoldChange) > 2) %>%
+  mutate(whatever = case_when(log2FoldChange < 0 ~ "seaward",
+                   log2FoldChange > 0 ~ "landward")) %>%
+  ggplot(aes(y=reorder(Family, log2FoldChange), x=log2FoldChange, fill=whatever)) + 
   geom_bar(stat="identity", color="black", 
            position=position_dodge()) +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        axis.text.y = element_text(size=17),
+        legend.title = element_blank(),
+        legend.position = "none") + 
+  ylab("") +
+  xlab("Log2 Fold Change") +
+  scale_fill_manual(values = c("brown3", "dodgerblue"), labels=c("High Marsh", "Low Marsh"))
+
+
+################################################################
+#             root differential abundance.                 #
+################################################################
+
+root_da <- subset_samples(phylo_elevation, Sample.description %in% c("Root marsh", "Root dry")) %>% run_deseq("0 + Sample.description")
+
+#results(dds, contrast = c("condition", "treated", "untreated"))
+#In this case, treated (numerator) is compared to untreated (denominator/baseline)
+# so a negative fold change means that something is lower in dry compared to marsh
+# so negative is seaward and positive is landweard
+root_da_annot <- results(root_da, contrast = list("Sample.descriptionRoot.dry", "Sample.descriptionRoot.marsh")) %>% annotate_deseq_results(phylo_elevation)
+
+root_neg_pos <- get_pos_neg_only_abundances(root_da_annot)
+
+root_plot <- root_da_annot %>% 
+  dplyr::select(log2FoldChange, Family) %>% 
+  drop_na() %>%
+  filter(Family %in% root_neg_pos & abs(log2FoldChange) > 2 & Family != "Gammaproteobacteria Incertae Sedis Unknown Family") %>%
+  mutate(whatever = case_when(log2FoldChange < 0 ~ "seaward",
+                              log2FoldChange > 0 ~ "landward")) %>%
+  ggplot(aes(y=reorder(Family, log2FoldChange), x=log2FoldChange, fill=whatever)) + 
+  geom_bar(stat="identity", color="black", 
+           position=position_dodge()) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        axis.text.y = element_text(size=17),
+        legend.title = element_blank()) + 
+  ylab("") +
+  xlab("Log2 Fold Change") +
+  scale_fill_manual(values = c("brown3", "dodgerblue"), labels=c("High Marsh", "Low Marsh"))
+
+
+png("differential_abundance.png", height = 1200, width=1000)
+(sediment_plot | (root_plot))
+dev.off()
+  
+
+
+
