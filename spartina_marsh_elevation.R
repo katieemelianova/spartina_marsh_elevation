@@ -77,16 +77,34 @@ results(tst)
 
 tst_annot <- results(tst) %>% annotate_deseq_results(phylo_elevation)
 
-tst_annot %>% colnames()
+
+
+
+all_negative <- tst_annot %>% 
+  dplyr::select(log2FoldChange, Family) %>%
+  group_by(Family) %>%
+  summarise(all(log2FoldChange < 0)) %>%
+  filter(`all(log2FoldChange < 0)` == TRUE) %>% 
+  pull(Family)
+
+all_positive <- tst_annot %>% 
+  dplyr::select(log2FoldChange, Family) %>%
+  group_by(Family) %>%
+  summarise(all(log2FoldChange > 0)) %>%
+  filter(`all(log2FoldChange > 0)` == TRUE) %>% 
+  pull(Family)
+
+
+# this should come up with no overlap (sanity check)
+intersect(all_negative, all_positive)
+
 tst_annot %>% 
   dplyr::select(log2FoldChange, Family) %>% 
   drop_na() %>%
-  ggplot(aes(x=reorder(Family, log2FoldChange), y=log2FoldChange)) + 
+  filter(Family %in% c(all_negative, all_positive)) %>%
+  mutate(whatever = case_when(log2FoldChange < 0 ~ "landward",
+                   log2FoldChange > 0 ~ "seaward")) %>%
+  ggplot(aes(x=reorder(Family, log2FoldChange), y=log2FoldChange, fill=whatever)) + 
   geom_bar(stat="identity", color="black", 
-           position=position_dodge())
-
-
-
-
-
-
+           position=position_dodge()) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
