@@ -91,14 +91,6 @@ get_pos_neg_only_abundances <- function(da_annot){
   return(c(all_negative, all_positive))
 }
 
-get_significant_highfreq_ASV <- function(da_annot, pval_threshold, fc_threshold){
-  sediment_da_annot %>%
-    filter(padj < pval_threshold& abs(log2FoldChange) > fc_threshold) %>%
-    group_by(Family) %>%
-    summarise(count=n()) %>%
-    filter(count > 1) %>% 
-    pull(Family)
-}
 
 ################################################################
 #             sediment differential abundance.                 #
@@ -112,18 +104,14 @@ sediment_da <- subset_samples(phylo_elevation, Sample.description %in% c("Sedime
 # so negative is seaward and positive is landweard
 sediment_da_annot <- results(sediment_da, contrast = list("Sample.descriptionSediment.dry", "Sample.descriptionSediment.marsh")) %>% annotate_deseq_results(phylo_elevation)
 
+sediment_neg_pos <- get_pos_neg_only_abundances(sediment_da_annot)
 
-sediment_neg_pos <- sediment_da_annot %>% get_pos_neg_only_abundances() %>% get_significant_highfreq_ASV(0.05, 2)
-
-
-sediment_da_annot %>% get_pos_neg_only_abundances()
-sediment_da_annot %>% get_significant_highfreq_ASV(0.05, 2)
-
-#### TO DO: plot only DA ASVs where more than one ASV per family
 sediment_plot <- sediment_da_annot %>% 
   dplyr::select(log2FoldChange, Family) %>% 
   drop_na() %>%
   filter(Family %in% sediment_neg_pos & abs(log2FoldChange) > 2) %>%
+  arrange(desc(abs(log2FoldChange))) %>%
+  head(10) %>%
   mutate(whatever = case_when(log2FoldChange < 0 ~ "seaward",
                    log2FoldChange > 0 ~ "landward")) %>%
   ggplot(aes(y=reorder(Family, log2FoldChange), x=log2FoldChange, fill=whatever)) + 
@@ -156,6 +144,8 @@ root_plot <- root_da_annot %>%
   dplyr::select(log2FoldChange, Family) %>% 
   drop_na() %>%
   filter(Family %in% root_neg_pos & abs(log2FoldChange) > 2 & Family != "Gammaproteobacteria Incertae Sedis Unknown Family") %>%
+  arrange(desc(abs(log2FoldChange))) %>%
+  head(10) %>%
   mutate(whatever = case_when(log2FoldChange < 0 ~ "seaward",
                               log2FoldChange > 0 ~ "landward")) %>%
   ggplot(aes(y=reorder(Family, log2FoldChange), x=log2FoldChange, fill=whatever)) + 
@@ -166,10 +156,11 @@ root_plot <- root_da_annot %>%
         legend.title = element_blank()) + 
   ylab("") +
   xlab("Log2 Fold Change") +
-  scale_fill_manual(values = c("brown3", "dodgerblue"), labels=c("High Marsh", "Low Marsh"))
+  scale_fill_manual(values = c("brown3", "dodgerblue"), labels=c("High Marsh", "Low Marsh")) +
+  xlim()
 
 
-png("differential_abundance.png", height = 1200, width=1000)
+png("differential_abundance.png", height = 500, width=1500)
 (sediment_plot | (root_plot))
 dev.off()
   
