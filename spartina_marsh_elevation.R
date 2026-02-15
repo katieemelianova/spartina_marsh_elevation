@@ -19,10 +19,11 @@ phylo_elevation <- readRDS("/Users/katieemelianova/Desktop/Spartina/JMF_results/
   ps_join(sample_mapping, by = "JMF_sample_ID") %>%
   subset_taxa(!(Family %in% c("Mitochondria", "Chloroplast"))) %>% subset_taxa(!(Order %in% c("Mitochondria", "Chloroplast")))
 
+sediment_samples_remove_2 <- phylo_elevation@sam_data$`User sample ID`[phylo_elevation@sam_data$`User sample ID` %>% endsWith(c("_2"))]
+sediment_samples_remove_3 <- phylo_elevation@sam_data$`User sample ID`[phylo_elevation@sam_data$`User sample ID` %>% endsWith(c("_3"))]
+sediment_samples_remove <- c(sediment_samples_remove_2, sediment_samples_remove_3)
 
-
-phylo_elevation %<>% subset_samples(!(is.na(Sample.description)) & !(Sample.description %in% c("Sedment unknown", "Root unknown")))
-
+phylo_elevation %<>% subset_samples(!(is.na(Sample.description)) & !(Sample.description %in% c("Sedment unknown", "Root unknown")) & !(User.sample.ID %in% sediment_samples_remove))
 
 phylo_elevation_prop <- transform_sample_counts(phylo_elevation, function(otu) otu/sum(otu))
 ord.nmds.bray_elevation <- ordinate(phylo_elevation_prop, method="NMDS", distance="bray")
@@ -92,6 +93,20 @@ get_pos_neg_only_abundances <- function(da_annot){
 }
 
 
+#####################################
+#        set ggplot theme           #
+#####################################
+
+common_theme <- theme(
+      axis.text.y = element_text(size=20),
+      legend.title = element_blank(),
+      plot.title = element_text(hjust = 0.5, vjust = 2, size=30),
+      legend.text = element_text(size=25),
+      axis.text = element_text(size=20),
+      axis.title = element_text(size=25),
+      axis.text.x = element_text())
+
+
 ################################################################
 #             sediment differential abundance.                 #
 ################################################################
@@ -111,19 +126,18 @@ sediment_plot <- sediment_da_annot %>%
   drop_na() %>%
   filter(Family %in% sediment_neg_pos & abs(log2FoldChange) > 2) %>%
   arrange(desc(abs(log2FoldChange))) %>%
-  head(10) %>%
+  head(30) %>%
   mutate(whatever = case_when(log2FoldChange < 0 ~ "seaward",
                    log2FoldChange > 0 ~ "landward")) %>%
   ggplot(aes(y=reorder(Family, log2FoldChange), x=log2FoldChange, fill=whatever)) + 
   geom_bar(stat="identity", color="black", 
            position=position_dodge()) +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
-        axis.text.y = element_text(size=17),
-        legend.title = element_blank(),
-        legend.position = "none") + 
+  common_theme + 
+  theme(legend.position = "none") +
   ylab("") +
   xlab("Log2 Fold Change") +
-  scale_fill_manual(values = c("brown3", "dodgerblue"), labels=c("High Marsh", "Low Marsh"))
+  scale_fill_manual(values = c("brown3", "dodgerblue"), labels=c("High Marsh", "Low Marsh")) + 
+  ggtitle("Rhizosphere")
 
 
 ################################################################
@@ -145,25 +159,120 @@ root_plot <- root_da_annot %>%
   drop_na() %>%
   filter(Family %in% root_neg_pos & abs(log2FoldChange) > 2 & Family != "Gammaproteobacteria Incertae Sedis Unknown Family") %>%
   arrange(desc(abs(log2FoldChange))) %>%
-  head(10) %>%
+  head(30) %>%
   mutate(whatever = case_when(log2FoldChange < 0 ~ "seaward",
                               log2FoldChange > 0 ~ "landward")) %>%
   ggplot(aes(y=reorder(Family, log2FoldChange), x=log2FoldChange, fill=whatever)) + 
   geom_bar(stat="identity", color="black", 
            position=position_dodge()) +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
-        axis.text.y = element_text(size=17),
-        legend.title = element_blank()) + 
+  common_theme + 
   ylab("") +
   xlab("Log2 Fold Change") +
-  scale_fill_manual(values = c("brown3", "dodgerblue"), labels=c("High Marsh", "Low Marsh")) +
-  xlim()
+  scale_fill_manual(values = c("brown3", "dodgerblue"), labels=c("High Marsh", "Low Marsh")) + 
+  ggtitle("Root")
 
 
 png("differential_abundance.png", height = 500, width=1500)
 (sediment_plot | (root_plot))
 dev.off()
   
+
+
+nitrosopumilaceae_bar <- subset_taxa(phylo_elevation_prop, Family == "Nitrosopumilaceae") %>%
+  tax_glom("Genus") %>%
+  plot_bar(fill="Genus") + 
+  facet_wrap(~Sample.description, scales="free_x", ncol=2) +
+  theme(axis.title = element_text(size=30),
+        axis.text = element_text(size=25),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.text.x = element_text(size = 30),
+        legend.text = element_text(size=25),
+        legend.title = element_blank(),
+        legend.position = c(0.75, 0.92),
+        legend.key = element_rect(fill = "transparent"),
+        legend.background = element_rect(fill='transparent'),
+        axis.title.x = element_blank())
+
+png("nitrosopumilaceae_bar.png", height = 900, width=900)
+nitrosopumilaceae_bar
+dev.off()
+
+
+abundance_threshold <- 0.3
+
+marsh_high_filt <- phylo_elevation_prop %>% 
+  subset_samples(Sample.description == "Sediment dry") %>%
+  filter_taxa(function(x) sum(x) > abundance_threshold, TRUE)
+
+marsh_low_filt <- phylo_elevation_prop %>% 
+  subset_samples(Sample.description == "Sediment marsh") %>%
+  filter_taxa(function(x) sum(x) > abundance_threshold, TRUE)
+
+root_high_filt <- phylo_elevation_prop %>% 
+  subset_samples(Sample.description == "Root dry") %>%
+  filter_taxa(function(x) sum(x) > abundance_threshold, TRUE)
+
+root_low_filt <- phylo_elevation_prop %>% 
+  subset_samples(Sample.description == "Root marsh") %>%
+  filter_taxa(function(x) sum(x) > abundance_threshold, TRUE)
+
+phylo_elevation_prop_filt <- merge_phyloseq(root_low_filt, root_high_filt, marsh_low_filt, marsh_high_filt)
+
+
+mycolors <- c("#E41A1C", "darkblue", "#66A61E", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "#A6CEE3", "dodgerblue", "#B2DF8A", "#E6AB02", "#FB9A99", "#FFFFB3")
+
+
+
+
+order_barplot <- phylo_elevation_prop_filt %>%
+  tax_glom("Order") %>%
+  plot_bar(fill="Order") +
+  facet_wrap("Sample.description", scales="free_x") +
+  theme(axis.title = element_text(size=30),
+        axis.text = element_text(size=25),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.text.x = element_text(size = 30),
+        legend.text = element_text(size=20),
+        legend.title = element_blank(),
+        #legend.position = c(0.78, 0.88),
+        legend.key = element_rect(fill = "transparent"),
+        legend.background = element_rect(fill='transparent'),
+        axis.title.x = element_blank()) +
+  ylab("Relative Abundance") +
+  scale_fill_manual(values = mycolors)
+
+
+
+png("order_barplot.png", height=700, width=850)
+order_barplot
+dev.off()
+
+
+
+
+chromatiales_bar <- subset_taxa(phylo_elevation_prop, Order %in% c("Chromatiales")) %>%
+  #subset_samples(Sample.description %in% c("Root dry", "Root marsh")) %>%
+  tax_glom("Genus") %>%
+  plot_bar(fill="Genus") + 
+  facet_wrap(~Sample.description, scales="free_x", ncol=2) +
+  theme(axis.title = element_text(size=30),
+        axis.text = element_text(size=25),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.text.x = element_text(size = 30),
+        legend.text = element_text(size=20),
+        legend.title = element_blank(),
+        legend.position = c(0.78, 0.88),
+        legend.key = element_rect(fill = "transparent"),
+        legend.background = element_rect(fill='transparent'),
+        axis.title.x = element_blank()) +
+  ylab("Relative Abundance")
+
+png("chromatiales_bar.png", height = 900, width=900)
+chromatiales_bar
+dev.off()
 
 
 
