@@ -25,18 +25,39 @@ sediment_samples_remove <- c(sediment_samples_remove_2, sediment_samples_remove_
 
 phylo_elevation %<>% subset_samples(!(is.na(Sample.description)) & !(Sample.description %in% c("Sedment unknown", "Root unknown")) & !(User.sample.ID %in% sediment_samples_remove))
 
+
+
+phylo_elevation@sam_data$Elevation <- case_when(phylo_elevation@sam_data$Sample.description == "Sediment marsh" ~ "Low Marsh",
+                                                phylo_elevation@sam_data$Sample.description == "Root marsh" ~ "Low Marsh",
+                                                phylo_elevation@sam_data$Sample.description == "Root dry" ~ "High Marsh",
+                                                phylo_elevation@sam_data$Sample.description == "Sediment dry" ~ "High Marsh")
+
+phylo_elevation@sam_data$Compartment <- case_when(phylo_elevation@sam_data$Sample.description == "Sediment marsh" ~ "Rhizosphere",
+                                                phylo_elevation@sam_data$Sample.description == "Root marsh" ~ "Root",
+                                                phylo_elevation@sam_data$Sample.description == "Root dry" ~ "Root",
+                                                phylo_elevation@sam_data$Sample.description == "Sediment dry" ~ "Rhizosphere")
+
+phylo_elevation@sam_data$Sample.description <- case_when(phylo_elevation@sam_data$Sample.description == "Sediment marsh" ~ "Low Marsh Rhizosphere",
+                                                  phylo_elevation@sam_data$Sample.description == "Root marsh" ~ "Low Marsh Root",
+                                                  phylo_elevation@sam_data$Sample.description == "Root dry" ~ "High Marsh Root",
+                                                  phylo_elevation@sam_data$Sample.description == "Sediment dry" ~ "High Marsh Rhizosphere")
+
+
+
 phylo_elevation_prop <- transform_sample_counts(phylo_elevation, function(otu) otu/sum(otu))
 ord.nmds.bray_elevation <- ordinate(phylo_elevation_prop, method="NMDS", distance="bray")
 
-plot_ordination(phylo_elevation_prop, ord.nmds.bray_elevation, color="Sample.description", title="Bray NMDS") + 
+ordination_plot <- plot_ordination(phylo_elevation_prop, ord.nmds.bray_elevation, shape="Compartment", color="Elevation", title="Bray NMDS") + 
   geom_point(size = 7) +
   theme(strip.text.x = element_text(size=25),
         axis.text.x = element_text(size=25),
         axis.text.y = element_text(size=20),
         axis.title = element_text(size=25),
-        legend.title = element_text(size=20),
-        legend.text = element_text(size=20)) +
-  ggtitle("")
+        legend.text = element_text(size=25),
+        legend.title = element_blank()) +
+  ggtitle("") +
+  scale_colour_manual(values = c("brown3", "dodgerblue"))
+  
 
 
 
@@ -111,13 +132,13 @@ common_theme <- theme(
 #             sediment differential abundance.                 #
 ################################################################
 
-sediment_da <- subset_samples(phylo_elevation, Sample.description %in% c("Sediment marsh", "Sediment dry")) %>% run_deseq("0 +Sample.description")
+sediment_da <- subset_samples(phylo_elevation, Sample.description %in% c("Low Marsh Rhizosphere", "High Marsh Rhizosphere")) %>% run_deseq("0 +Sample.description")
 
 #results(dds, contrast = c("condition", "treated", "untreated"))
 #In this case, treated (numerator) is compared to untreated (denominator/baseline)
 # so a negative fold change means that something is lower in dry compared to marsh
 # so negative is seaward and positive is landweard
-sediment_da_annot <- results(sediment_da, contrast = list("Sample.descriptionSediment.dry", "Sample.descriptionSediment.marsh")) %>% annotate_deseq_results(phylo_elevation)
+sediment_da_annot <- results(sediment_da, contrast = list("Sample.descriptionHigh.Marsh.Rhizosphere", "Sample.descriptionLow.Marsh.Rhizosphere" )) %>% annotate_deseq_results(phylo_elevation)
 
 sediment_neg_pos <- get_pos_neg_only_abundances(sediment_da_annot)
 
@@ -144,13 +165,13 @@ sediment_plot <- sediment_da_annot %>%
 #             root differential abundance.                 #
 ################################################################
 
-root_da <- subset_samples(phylo_elevation, Sample.description %in% c("Root marsh", "Root dry")) %>% run_deseq("0 + Sample.description")
+root_da <- subset_samples(phylo_elevation, Sample.description %in% c("Low Marsh Root", "High Marsh Root")) %>% run_deseq("0 + Sample.description")
 
 #results(dds, contrast = c("condition", "treated", "untreated"))
 #In this case, treated (numerator) is compared to untreated (denominator/baseline)
 # so a negative fold change means that something is lower in dry compared to marsh
 # so negative is seaward and positive is landweard
-root_da_annot <- results(root_da, contrast = list("Sample.descriptionRoot.dry", "Sample.descriptionRoot.marsh")) %>% annotate_deseq_results(phylo_elevation)
+root_da_annot <- results(root_da, contrast = list("Sample.descriptionHigh.Marsh.Root", "Sample.descriptionLow.Marsh.Root" )) %>% annotate_deseq_results(phylo_elevation)
 
 root_neg_pos <- get_pos_neg_only_abundances(root_da_annot)
 
@@ -178,50 +199,38 @@ dev.off()
   
 
 
-nitrosopumilaceae_bar <- subset_taxa(phylo_elevation_prop, Family == "Nitrosopumilaceae") %>%
-  tax_glom("Genus") %>%
-  plot_bar(fill="Genus") + 
-  facet_wrap(~Sample.description, scales="free_x", ncol=2) +
-  theme(axis.title = element_text(size=30),
-        axis.text = element_text(size=25),
-        axis.text.x = element_blank(),
-        axis.ticks.x = element_blank(),
-        strip.text.x = element_text(size = 30),
-        legend.text = element_text(size=25),
-        legend.title = element_blank(),
-        legend.position = c(0.75, 0.92),
-        legend.key = element_rect(fill = "transparent"),
-        legend.background = element_rect(fill='transparent'),
-        axis.title.x = element_blank())
-
-png("nitrosopumilaceae_bar.png", height = 900, width=900)
-nitrosopumilaceae_bar
-dev.off()
 
 
-abundance_threshold <- 0.3
 
-marsh_high_filt <- phylo_elevation_prop %>% 
-  subset_samples(Sample.description == "Sediment dry") %>%
-  filter_taxa(function(x) sum(x) > abundance_threshold, TRUE)
+abundance_threshold <- 0.01
 
-marsh_low_filt <- phylo_elevation_prop %>% 
-  subset_samples(Sample.description == "Sediment marsh") %>%
-  filter_taxa(function(x) sum(x) > abundance_threshold, TRUE)
+marsh_high_filt <- phylo_elevation_prop %>%
+  subset_samples(Sample.description == "High Marsh Rhizosphere") %>%
+  filter_taxa(function(x) mean(x) > abundance_threshold, TRUE)
 
-root_high_filt <- phylo_elevation_prop %>% 
-  subset_samples(Sample.description == "Root dry") %>%
-  filter_taxa(function(x) sum(x) > abundance_threshold, TRUE)
+marsh_low_filt <- phylo_elevation_prop %>%
+  subset_samples(Sample.description == "Low Marsh Rhizosphere") %>%
+  filter_taxa(function(x) mean(x) > abundance_threshold, TRUE)
 
-root_low_filt <- phylo_elevation_prop %>% 
-  subset_samples(Sample.description == "Root marsh") %>%
-  filter_taxa(function(x) sum(x) > abundance_threshold, TRUE)
+root_high_filt <- phylo_elevation_prop %>%
+  subset_samples(Sample.description == "High Marsh Root") %>%
+  filter_taxa(function(x) mean(x) > abundance_threshold, TRUE)
+
+root_low_filt <- phylo_elevation_prop %>%
+  subset_samples(Sample.description == "Low Marsh Root") %>%
+  filter_taxa(function(x) mean(x) > abundance_threshold, TRUE)
 
 phylo_elevation_prop_filt <- merge_phyloseq(root_low_filt, root_high_filt, marsh_low_filt, marsh_high_filt)
 
 
-mycolors <- c("#E41A1C", "darkblue", "#66A61E", "#984EA3", "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "#A6CEE3", "dodgerblue", "#B2DF8A", "#E6AB02", "#FB9A99", "#FFFFB3")
-
+mycolors <- c("indianred1", "darkorchid", "darkolivegreen", 
+              "hotpink2", "#FF7F00", "mistyrose2", 
+              "#A65628", "steelblue3", "#A6CEE3", 
+              "dodgerblue", "darkolivegreen1", "#E6AB02", 
+              "navajowhite3", "#FFFFB3", "darkorange", 
+              "lightsteelblue", "cyan3", "yellow", 
+              "#E41A1C", "blue3", "chartreuse2", 
+              "#984EA3", "#FF7F00", "darkslategray1")
 
 
 
@@ -233,7 +242,7 @@ order_barplot <- phylo_elevation_prop_filt %>%
         axis.text = element_text(size=25),
         axis.text.x = element_blank(),
         axis.ticks.x = element_blank(),
-        strip.text.x = element_text(size = 30),
+        strip.text.x = element_text(size = 22),
         legend.text = element_text(size=20),
         legend.title = element_blank(),
         #legend.position = c(0.78, 0.88),
@@ -241,12 +250,17 @@ order_barplot <- phylo_elevation_prop_filt %>%
         legend.background = element_rect(fill='transparent'),
         axis.title.x = element_blank()) +
   ylab("Relative Abundance") +
-  scale_fill_manual(values = mycolors)
+  scale_fill_manual(values = mycolors) + 
+  guides(fill = guide_legend(ncol = 1)) 
 
 
 
-png("order_barplot.png", height=700, width=850)
-order_barplot
+
+
+
+
+png("order_barplot.png", height=700, width=1600)
+(ordination_plot | order_barplot) + plot_annotation(tag_levels = 'A') & theme(plot.tag = element_text(size = 35))
 dev.off()
 
 
@@ -274,5 +288,33 @@ png("chromatiales_bar.png", height = 900, width=900)
 chromatiales_bar
 dev.off()
 
+
+
+
+
+
+###########################################
+#     trying out Indicspecies package     #
+###########################################
+
+library(indicspecies)
+
+phylo_elevation@otu_table
+phylo_elevation@sam_data$Elevation
+
+indsp <- multipatt(t(phylo_elevation@otu_table), phylo_elevation@sam_data$Elevation, func = "IndVal.g", duleg=TRUE)
+
+
+high_marsh_taxa <- indsp$sign %>% filter(p.value < 0.05 & `s.High Marsh` == 1) %>%
+  rownames_to_column(var="amplicon") %>% 
+  left_join(tax_table(phylo_elevation) %>% data.frame() %>% rownames_to_column(var="amplicon"))
+
+
+low_marsh_taxa <- indsp$sign %>% filter(p.value < 0.05 & `s.Low Marsh` == 1) %>%
+  rownames_to_column(var="amplicon") %>% 
+  left_join(tax_table(phylo_elevation) %>% data.frame() %>% rownames_to_column(var="amplicon"))
+
+high_marsh_taxa$Genus %>% table() %>% sort() %>% tail(5)
+low_marsh_taxa$Genus
 
 
