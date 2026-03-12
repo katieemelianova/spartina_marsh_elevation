@@ -302,19 +302,37 @@ library(indicspecies)
 phylo_elevation@otu_table
 phylo_elevation@sam_data$Elevation
 
-indsp <- multipatt(t(phylo_elevation@otu_table), phylo_elevation@sam_data$Elevation, func = "IndVal.g", duleg=TRUE)
+
+rhizosphere_OTU <- phylo_elevation@otu_table[,phylo_elevation@sam_data$Compartment == "Rhizosphere"]
+rhizosphere_SAM <- phylo_elevation@sam_data$Elevation[phylo_elevation@sam_data$Compartment == "Rhizosphere"]
+
+root_OTU <- phylo_elevation@otu_table[,phylo_elevation@sam_data$Compartment == "Root"]
+root_SAM <- phylo_elevation@sam_data$Elevation[phylo_elevation@sam_data$Compartment == "Root"]
+
+indsp_rhizosphere <- multipatt(t(rhizosphere_OTU), rhizosphere_SAM, func = "IndVal.g", duleg=TRUE)
+indsp_root <- multipatt(t(root_OTU), root_SAM, func = "IndVal.g", duleg=TRUE)
 
 
-high_marsh_taxa <- indsp$sign %>% filter(p.value < 0.05 & `s.High Marsh` == 1) %>%
+high_marsh_rhizosphere <- indsp_rhizosphere$sign %>% filter(p.value < 0.05 & `s.High Marsh` == 1) %>%
+  rownames_to_column(var="amplicon") %>% 
+  left_join(tax_table(phylo_elevation) %>% data.frame() %>% rownames_to_column(var="amplicon"))
+
+low_marsh_rhizosphere <- indsp_rhizosphere$sign %>% filter(p.value < 0.05 & `s.Low Marsh` == 1) %>%
   rownames_to_column(var="amplicon") %>% 
   left_join(tax_table(phylo_elevation) %>% data.frame() %>% rownames_to_column(var="amplicon"))
 
 
-low_marsh_taxa <- indsp$sign %>% filter(p.value < 0.05 & `s.Low Marsh` == 1) %>%
+
+high_marsh_root <- indsp_root$sign %>% filter(p.value < 0.05 & `s.High Marsh` == 1) %>%
   rownames_to_column(var="amplicon") %>% 
   left_join(tax_table(phylo_elevation) %>% data.frame() %>% rownames_to_column(var="amplicon"))
 
-high_marsh_taxa$Genus %>% table() %>% sort() %>% tail(5)
-low_marsh_taxa$Genus
+low_marsh_root <- indsp_root$sign %>% filter(p.value < 0.05 & `s.Low Marsh` == 1) %>%
+  rownames_to_column(var="amplicon") %>% 
+  left_join(tax_table(phylo_elevation) %>% data.frame() %>% rownames_to_column(var="amplicon"))
+
+
+high_marsh_rhizosphere$Family %>% table() %>% sort() %>% tail(10) %>% data.frame()
+low_marsh_rhizosphere$Family %>% table() %>% sort() %>% tail(10) %>% data.frame()
 
 
