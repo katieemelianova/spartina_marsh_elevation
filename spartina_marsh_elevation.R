@@ -4,11 +4,18 @@ library(dplyr)
 library(magrittr)
 library(ggplot2)
 library(DESeq2)
+library(microViz)
+library(phyloseq)
+library(ggsignif)
+library(tibble)
 
+##################################################
+#.           read in data and filter             #
+##################################################
 
-samplesheet <- readxl::read_xlsx("/Users/katieemelianova/Desktop/Spartina/JMF_results/Results_2025-04-30/JMF-2503-07.xlsx") %>% dplyr::select(`JMF sample ID`, `User sample ID`)
+samplesheet <- readxl::read_xlsx("/Users/katieemelianova/Desktop/Spartina/JMF_results/Results_2025-04-30/JMF-2503-07.xlsx") %>% dplyr::select(`JMF sample ID`, `User sample ID`) 
 sample_annotation <- readxl::read_xlsx("/Users/katieemelianova/Desktop/Spartina/Sequencing/March2025_LeFaouAmplicon/LeFaou_samplesheet.xlsx") %>% dplyr::select(`User sample ID`, `Sample description`)
-sample_mapping <- left_join(samplesheet, sample_annotation, by="User sample ID") %>% rename("JMF_sample_ID" = "JMF sample ID")
+sample_mapping <- left_join(samplesheet, sample_annotation, by="User sample ID") %>% rename("JMF sample ID" = "JMF_sample_ID")
 
 
 phylo_elevation <- readRDS("/Users/katieemelianova/Desktop/Spartina/JMF_results/Results_2025-04-30/JMF-2503-07_16S_raw_phyloseq.rds") %>%
@@ -19,13 +26,18 @@ phylo_elevation <- readRDS("/Users/katieemelianova/Desktop/Spartina/JMF_results/
   ps_join(sample_mapping, by = "JMF_sample_ID") %>%
   subset_taxa(!(Family %in% c("Mitochondria", "Chloroplast"))) %>% subset_taxa(!(Order %in% c("Mitochondria", "Chloroplast")))
 
+############################################
+#         remove biological replicates     #    maybe will use later if I know how to merge
+############################################
 sediment_samples_remove_2 <- phylo_elevation@sam_data$`User sample ID`[phylo_elevation@sam_data$`User sample ID` %>% endsWith(c("_2"))]
 sediment_samples_remove_3 <- phylo_elevation@sam_data$`User sample ID`[phylo_elevation@sam_data$`User sample ID` %>% endsWith(c("_3"))]
 sediment_samples_remove <- c(sediment_samples_remove_2, sediment_samples_remove_3)
-
 phylo_elevation %<>% subset_samples(!(is.na(Sample.description)) & !(Sample.description %in% c("Sedment unknown", "Root unknown")) & !(User.sample.ID %in% sediment_samples_remove))
 
 
+############################################
+#               rename variables           #
+############################################
 
 phylo_elevation@sam_data$Elevation <- case_when(phylo_elevation@sam_data$Sample.description == "Sediment marsh" ~ "Low Marsh",
                                                 phylo_elevation@sam_data$Sample.description == "Root marsh" ~ "Low Marsh",
@@ -43,6 +55,9 @@ phylo_elevation@sam_data$Sample.description <- case_when(phylo_elevation@sam_dat
                                                   phylo_elevation@sam_data$Sample.description == "Sediment dry" ~ "High Marsh Rhizosphere")
 
 
+############################################
+#           transform and ordinate         #
+############################################
 
 phylo_elevation_prop <- transform_sample_counts(phylo_elevation, function(otu) otu/sum(otu))
 ord.nmds.bray_elevation <- ordinate(phylo_elevation_prop, method="NMDS", distance="bray")
@@ -58,6 +73,100 @@ ordination_plot <- plot_ordination(phylo_elevation_prop, ord.nmds.bray_elevation
   ggtitle("") +
   scale_colour_manual(values = c("brown3", "dodgerblue"))
   
+############################################
+#           rarefy and shannon             #
+############################################
+
+phylo_elevation_rarefied <- rarefy_even_depth(phylo_elevation, sample.size = min(sample_sums(phylo_elevation)),
+                  rngseed = 1, replace = TRUE, trimOTUs = TRUE, verbose = TRUE)
+
+alpha_diversity <- plot_richness(phylo_elevation_rarefied, x="Elevation", 
+              measures=c("Shannon")) + 
+  geom_boxplot(aes(fill=Elevation)) +
+  geom_signif(comparisons = list(c("Low Marsh", "High Marsh")),
+              textsize=8,
+              map_signif_level = TRUE) +
+  facet_wrap(~Compartment) +
+  scale_fill_manual(values = c("brown3", "dodgerblue")) +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.text.y = element_text(size=20),
+        axis.title = element_text(size=25),
+        strip.text.x = element_text(size=25),
+        legend.text = element_text(size=25),
+        legend.title = element_blank())
+
+##########################################
+#          get dominant orders           #
+##########################################
+
+abundance_threshold <- 0.01
+
+marsh_high_filt <- phylo_elevation_prop %>%
+  subset_samples(Sample.description == "High Marsh Rhizosphere") %>%
+  filter_taxa(function(x) mean(x) > abundance_threshold, TRUE)
+
+marsh_low_filt <- phylo_elevation_prop %>%
+  subset_samples(Sample.description == "Low Marsh Rhizosphere") %>%
+  filter_taxa(function(x) mean(x) > abundance_threshold, TRUE)
+
+root_high_filt <- phylo_elevation_prop %>%
+  subset_samples(Sample.description == "High Marsh Root") %>%
+  filter_taxa(function(x) mean(x) > abundance_threshold, TRUE)
+
+root_low_filt <- phylo_elevation_prop %>%
+  subset_samples(Sample.description == "Low Marsh Root") %>%
+  filter_taxa(function(x) mean(x) > abundance_threshold, TRUE)
+
+
+phylo_elevation_prop_filt <- merge_phyloseq(root_low_filt, marsh_low_filt, root_high_filt, marsh_high_filt)
+
+
+mycolors <- c("indianred1", "darkorchid", "darkolivegreen", 
+              "hotpink2", "coral", "mistyrose2", 
+              "#A65628", "steelblue3", "#A6CEE3", 
+              "dodgerblue", "darkolivegreen1", "#E6AB02", 
+              "navajowhite3", "#FFFFB3", "darkorange", 
+              "lightsteelblue", "cyan3", "yellow", 
+              "#E41A1C", "blue3", "chartreuse2", 
+              "#984EA3", "darkgoldenrod1", "darkslategray1")
+
+
+# factor reorder sample descriptions so you have elevations plotted next to one another
+phylo_elevation_prop_filt@sam_data$Sample.description <- factor(phylo_elevation_prop_filt@sam_data$Sample.description, levels = c("Low Marsh Root", "High Marsh Root", "Low Marsh Rhizosphere", "High Marsh Rhizosphere"))
+
+
+order_barplot <- phylo_elevation_prop_filt %>%
+  tax_glom("Order") %>%
+  plot_bar(fill="Order") +
+  facet_wrap("Sample.description", scales="free_x", ncol=4) +
+  theme(axis.title = element_text(size=30),
+        axis.text = element_text(size=25),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.text.x = element_text(size = 22),
+        legend.text = element_text(size=20),
+        legend.title = element_blank(),
+        #legend.position = c(0.78, 0.88),
+        legend.key = element_rect(fill = "transparent"),
+        legend.background = element_rect(fill='transparent'),
+        axis.title.x = element_blank()) +
+  ylab("Relative Abundance") +
+  scale_fill_manual(values = mycolors) + 
+  guides(fill = guide_legend(ncol = 1)) 
+
+##########################################
+#   plot diversity and dominant orders   #
+##########################################
+
+#png("diversity_plot.png", height=700, width=1600)
+(ordination_plot | alpha_diversity) + plot_annotation(tag_levels = 'A') & theme(plot.tag = element_text(size = 35))
+#dev.off()
+
+#png("diversity_order_plot.png", height=1100, width=1400)
+((ordination_plot | alpha_diversity) / order_barplot) + plot_annotation(tag_levels = 'A') & theme(plot.tag = element_text(size = 35))
+#dev.off()
 
 
 
@@ -65,7 +174,9 @@ ordination_plot <- plot_ordination(phylo_elevation_prop, ord.nmds.bray_elevation
 
 
 
-
+#########################################
+#    differential abundance functions   #
+#########################################
 
 
 
@@ -94,6 +205,10 @@ annotate_deseq_results <- function(deseq_result, phylo_object){
 }
 
 
+
+#####################################################################################################################
+#     make a function which picks Families where all members have the same direction of differenxtial abundance.    #
+#####################################################################################################################
 
 get_pos_neg_only_abundances <- function(da_annot){
   all_negative <- da_annot %>% 
@@ -161,6 +276,7 @@ sediment_plot <- sediment_da_annot %>%
   ggtitle("Rhizosphere")
 
 
+
 ################################################################
 #             root differential abundance.                 #
 ################################################################
@@ -193,78 +309,66 @@ root_plot <- root_da_annot %>%
   ggtitle("Root")
 
 
+
+############################################################
+#             plot differential abundance.                 #
+############################################################
+
 png("differential_abundance.png", height = 500, width=1500)
-(sediment_plot | (root_plot))
+(sediment_plot / (root_plot))
 dev.off()
-  
+
+png("test.png", height = 900, width=1600)
+(ordination_plot | (sediment_plot / (root_plot))) + plot_layout(widths = c(2.2,1.2))
+dev.off()
 
 
 
 
 
-abundance_threshold <- 0.01
-
-marsh_high_filt <- phylo_elevation_prop %>%
-  subset_samples(Sample.description == "High Marsh Rhizosphere") %>%
-  filter_taxa(function(x) mean(x) > abundance_threshold, TRUE)
-
-marsh_low_filt <- phylo_elevation_prop %>%
-  subset_samples(Sample.description == "Low Marsh Rhizosphere") %>%
-  filter_taxa(function(x) mean(x) > abundance_threshold, TRUE)
-
-root_high_filt <- phylo_elevation_prop %>%
-  subset_samples(Sample.description == "High Marsh Root") %>%
-  filter_taxa(function(x) mean(x) > abundance_threshold, TRUE)
-
-root_low_filt <- phylo_elevation_prop %>%
-  subset_samples(Sample.description == "Low Marsh Root") %>%
-  filter_taxa(function(x) mean(x) > abundance_threshold, TRUE)
-
-phylo_elevation_prop_filt <- merge_phyloseq(root_low_filt, root_high_filt, marsh_low_filt, marsh_high_filt)
-
-
-mycolors <- c("indianred1", "darkorchid", "darkolivegreen", 
-              "hotpink2", "#FF7F00", "mistyrose2", 
-              "#A65628", "steelblue3", "#A6CEE3", 
-              "dodgerblue", "darkolivegreen1", "#E6AB02", 
-              "navajowhite3", "#FFFFB3", "darkorange", 
-              "lightsteelblue", "cyan3", "yellow", 
-              "#E41A1C", "blue3", "chartreuse2", 
-              "#984EA3", "#FF7F00", "darkslategray1")
 
 
 
-order_barplot <- phylo_elevation_prop_filt %>%
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+leptospiraceae_bar <- subset_taxa(phylo_elevation_prop, Family %in% c("Leptospiraceae")) %>%
+  #subset_samples(Sample.description %in% c("Root dry", "Root marsh")) %>%
   tax_glom("Order") %>%
-  plot_bar(fill="Order") +
-  facet_wrap("Sample.description", scales="free_x") +
+  plot_bar(fill="Order") + 
+  facet_wrap(~Sample.description, scales="free_x", ncol=2) +
   theme(axis.title = element_text(size=30),
         axis.text = element_text(size=25),
         axis.text.x = element_blank(),
         axis.ticks.x = element_blank(),
-        strip.text.x = element_text(size = 22),
+        strip.text.x = element_text(size = 30),
         legend.text = element_text(size=20),
         legend.title = element_blank(),
-        #legend.position = c(0.78, 0.88),
+        legend.position = c(0.78, 0.88),
         legend.key = element_rect(fill = "transparent"),
         legend.background = element_rect(fill='transparent'),
         axis.title.x = element_blank()) +
-  ylab("Relative Abundance") +
-  scale_fill_manual(values = mycolors) + 
-  guides(fill = guide_legend(ncol = 1)) 
-
-
-
-
-
-
-
-png("order_barplot.png", height=700, width=1600)
-(ordination_plot | order_barplot) + plot_annotation(tag_levels = 'A') & theme(plot.tag = element_text(size = 35))
-dev.off()
-
-
-
+  ylab("Relative Abundance")
 
 chromatiales_bar <- subset_taxa(phylo_elevation_prop, Order %in% c("Chromatiales")) %>%
   #subset_samples(Sample.description %in% c("Root dry", "Root marsh")) %>%
@@ -284,9 +388,31 @@ chromatiales_bar <- subset_taxa(phylo_elevation_prop, Order %in% c("Chromatiales
         axis.title.x = element_blank()) +
   ylab("Relative Abundance")
 
-png("chromatiales_bar.png", height = 900, width=900)
-chromatiales_bar
+
+sulfur_oxidising_bar <- subset_taxa(phylo_elevation_prop, Genus %in% c("Sedimenticola", "Candidatus Thiodiazotropha")) %>%
+  #subset_samples(Sample.description %in% c("Root dry", "Root marsh")) %>%
+  tax_glom("Genus") %>%
+  plot_bar(fill="Genus") + 
+  facet_wrap(~Sample.description, scales="free_x", ncol=2) +
+  theme(axis.title = element_text(size=30),
+        axis.text = element_text(size=25),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.text.x = element_text(size = 30),
+        legend.text = element_text(size=25),
+        legend.title = element_blank(),
+        legend.position = c(0.24, 0.92),
+        legend.key = element_rect(fill = "transparent"),
+        legend.background = element_rect(fill='transparent'),
+        axis.title.x = element_blank()) +
+  ylab("Relative Abundance")
+
+png("sulfur_oxidising_bar.png", height = 900, width=900)
+sulfur_oxidising_bar
 dev.off()
+
+
+
 
 
 
