@@ -89,7 +89,7 @@ ordination_plot <- plot_ordination(phylo_elevation_prop, ord.nmds.bray_elevation
   
 
 ###################################################
-#         Figure 3  get dominant orders           #
+#         heatmap of  dominant orders           #
 ###################################################
 
 abundance_threshold <- 0.01
@@ -123,7 +123,8 @@ heatmap <- phylo_elevation_prop_filt %>%
   ps_mutate(Elevation = case_when(Elevation == "Low Marsh" ~"(Low)",
                                   Elevation == "High Marsh" ~"(High)")) %>%
   plot_heatmap(sample.label="Sample.description", sample.order="organism", taxa.label = "Family") +
-  theme(axis.text.y = element_text(size=26),
+  theme(axis.text.y = element_text(size=27.5),
+        axis.title.y = element_text(size=35),
         legend.title=element_blank(),
         legend.text=element_text(size=30),
         axis.title = element_text(size=30),
@@ -134,17 +135,13 @@ heatmap <- phylo_elevation_prop_filt %>%
         axis.ticks.x = element_blank()) +
   facet_wrap(~factor(Compartment, c("Root", "Rhizosphere"))+factor(Elevation, c("(Low)", "(High)")), scales = "free_x", nrow = 1)
 
+# change the decomal places of the hratmap
+heatmap$scales$scales[[3]]$labels <- function(x) sprintf("%.3f", x)
 
 
-png("Figure3.png", height = 1200, width=1500)
-heatmap
-dev.off()
-
-
-
-#################################################################
-#       Figure 4 Plot Can. Thiodiazotropha dn Sedimentiocola    #
-#################################################################
+#############################
+#     Plot  sulfox          #
+#############################
 
 
 
@@ -155,52 +152,52 @@ all_sulfur_oxidising_box <- subset_taxa(phylo_elevation_prop, Family %in% c("Arc
                                         Sample.description == "High Marsh Root" ~ "Root (High)",
                                         Sample.description == "Low Marsh Rhizosphere" ~ "Rhizosphere (Low)",
                                         Sample.description == "High Marsh Rhizosphere" ~ "Rhizosphere (High)")) %>%
-  mutate(Genus=str_replace(Genus, "Candidatus Thiodiazotropha", "Ca. Thiodiazotropha")) %>%
-  ggplot(aes(x=factor(Sample.description, c("Root (Low)", "Root (High)", "Rhizosphere (Low)", "Rhizosphere (High)")), y=log(Abundance))) + 
-  geom_boxplot(aes(fill=Compartment), lwd=0.9) +
+  mutate(Genus=str_replace(Genus, "Candidatus Thiodiazotropha", "C.Thiodiazotropha"),
+         Genus=str_replace(Genus, "Candidatus Thiobios", "C.Thiobios")) %>%
+  ggplot(aes(x=factor(Elevation, c("Low Marsh", "High Marsh")), y=log(Abundance))) + 
+  geom_boxplot(aes(fill=Compartment), lwd=0.5) +
   facet_wrap(~Genus, ncol=2) +
-  theme(axis.text.x = element_text(angle=40, hjust=1, size=18),
+  theme(axis.text.x = element_text(angle=35, hjust=1, size=30),
         axis.title.x = element_blank(),
         axis.text.y = element_text(size=22),
         axis.title.y = element_text(size=35),
-        strip.text.x = element_text(size=25),
+        strip.text.x = element_text(size=30),
         strip.background = element_rect(fill = "gray92"),
         panel.background = element_blank(),
-        legend.position="none") +
+        legend.position = c(0.78, 0.0005),
+        legend.title=element_blank(),
+        legend.text=element_text(size=40)) +
   ylab("Log Relative Abundance") +
   scale_fill_manual(values=c("#fe9b00", "#2b9b81"))
 
-png("Figure4.png", height = 1200, width=1500)
-heatmap
+
+png("Figure3.png", height = 1300, width=2100)
+(heatmap + all_sulfur_oxidising_box) + plot_layout(widths=c(2, 1.1)) + plot_annotation(tag_levels = 'A') & theme(plot.tag = element_text(size = 40))
 dev.off()
-
-
-
-
 
 ############################################
 #           rarefy and shannon             #
 ############################################
 
-phylo_elevation_rarefied <- rarefy_even_depth(phylo_elevation, sample.size = min(sample_sums(phylo_elevation)),
-                                              rngseed = 1, replace = TRUE, trimOTUs = TRUE, verbose = TRUE)
-
-alpha_diversity <- plot_richness(phylo_elevation_rarefied, x="Elevation", 
-                                 measures=c("Shannon")) + 
-  geom_boxplot(aes(fill=Elevation)) +
-  geom_signif(comparisons = list(c("Low Marsh", "High Marsh")),
-              textsize=8,
-              map_signif_level = TRUE) +
-  facet_wrap(~Compartment) +
-  scale_fill_manual(values = c("brown3", "dodgerblue")) +
-  theme(axis.text.x = element_blank(),
-        axis.ticks.x = element_blank(),
-        axis.title.x = element_blank(),
-        axis.text.y = element_text(size=20),
-        axis.title = element_text(size=25),
-        strip.text.x = element_text(size=25),
-        legend.text = element_text(size=25),
-        legend.title = element_blank())
+#phylo_elevation_rarefied <- rarefy_even_depth(phylo_elevation, sample.size = min(sample_sums(phylo_elevation)),
+#                                              rngseed = 1, replace = TRUE, trimOTUs = TRUE, verbose = TRUE)
+#
+#alpha_diversity <- plot_richness(phylo_elevation_rarefied, x="Elevation", 
+#                                 measures=c("Shannon")) + 
+#  geom_boxplot(aes(fill=Elevation)) +
+#  geom_signif(comparisons = list(c("Low Marsh", "High Marsh")),
+#              textsize=8,
+#              map_signif_level = TRUE) +
+#  facet_wrap(~Compartment) +
+#  scale_fill_manual(values = c("brown3", "dodgerblue")) +
+#  theme(axis.text.x = element_blank(),
+#        axis.ticks.x = element_blank(),
+#        axis.title.x = element_blank(),
+#        axis.text.y = element_text(size=20),
+#        axis.title = element_text(size=25),
+#        strip.text.x = element_text(size=25),
+#        legend.text = element_text(size=25),
+#        legend.title = element_blank())
 
 
 #########################################
@@ -347,7 +344,7 @@ root_plot <- root_da_annot %>%
 ############################################################
 
 
-png("test.png", height = 500, width=1800)
+png("Figure2.png", height = 500, width=1800)
 (ordination_plot  | sediment_plot | root_plot) + plot_layout(widths=c(2, 1.2, 1.2)) + plot_annotation(tag_levels = 'A') & 
   theme(plot.tag = element_text(size = 40))
 dev.off()
@@ -355,92 +352,7 @@ dev.off()
 
 
 
-chromatiales_bar <- subset_taxa(phylo_elevation_prop, Order %in% c("Chromatiales")) %>%
-  #subset_samples(Sample.description %in% c("Root dry", "Root marsh")) %>%
-  tax_glom("Genus") %>%
-  plot_bar(fill="Genus") + 
-  facet_wrap(~Sample.description, scales="free_x", ncol=2) +
-  theme(axis.title = element_text(size=30),
-        axis.text = element_text(size=25),
-        axis.text.x = element_blank(),
-        axis.ticks.x = element_blank(),
-        strip.text.x = element_text(size = 30),
-        legend.text = element_text(size=20),
-        legend.title = element_blank(),
-        legend.position = c(0.78, 0.88),
-        legend.key = element_rect(fill = "transparent"),
-        legend.background = element_rect(fill='transparent'),
-        axis.title.x = element_blank()) +
-  ylab("Relative Abundance")
 
 
-sulfur_oxidising_bar <- subset_taxa(phylo_elevation_prop, Genus %in% c("Sedimenticola", "Candidatus Thiodiazotropha")) %>%
-  #subset_samples(Sample.description %in% c("Root dry", "Root marsh")) %>%
-  tax_glom("Genus") %>%
-  plot_bar(fill="Genus") + 
-  facet_wrap(~Sample.description, scales="free_x", ncol=2) +
-  theme(axis.title = element_text(size=30),
-        axis.text = element_text(size=25),
-        axis.text.x = element_blank(),
-        axis.ticks.x = element_blank(),
-        strip.text.x = element_text(size = 30),
-        legend.text = element_text(size=25),
-        legend.title = element_blank(),
-        legend.position = c(0.24, 0.92),
-        legend.key = element_rect(fill = "transparent"),
-        legend.background = element_rect(fill='transparent'),
-        axis.title.x = element_blank()) +
-  ylab("Relative Abundance")
-
-png("sulfur_oxidising_bar.png", height = 900, width=900)
-sulfur_oxidising_bar
-dev.off()
-
-
-
-
-
-
-###########################################
-#     trying out Indicspecies package     #
-###########################################
-
-library(indicspecies)
-
-phylo_elevation@otu_table
-phylo_elevation@sam_data$Elevation
-
-
-rhizosphere_OTU <- phylo_elevation@otu_table[,phylo_elevation@sam_data$Compartment == "Rhizosphere"]
-rhizosphere_SAM <- phylo_elevation@sam_data$Elevation[phylo_elevation@sam_data$Compartment == "Rhizosphere"]
-
-root_OTU <- phylo_elevation@otu_table[,phylo_elevation@sam_data$Compartment == "Root"]
-root_SAM <- phylo_elevation@sam_data$Elevation[phylo_elevation@sam_data$Compartment == "Root"]
-
-indsp_rhizosphere <- multipatt(t(rhizosphere_OTU), rhizosphere_SAM, func = "IndVal.g", duleg=TRUE)
-indsp_root <- multipatt(t(root_OTU), root_SAM, func = "IndVal.g", duleg=TRUE)
-
-
-high_marsh_rhizosphere <- indsp_rhizosphere$sign %>% filter(p.value < 0.05 & `s.High Marsh` == 1) %>%
-  rownames_to_column(var="amplicon") %>% 
-  left_join(tax_table(phylo_elevation) %>% data.frame() %>% rownames_to_column(var="amplicon"))
-
-low_marsh_rhizosphere <- indsp_rhizosphere$sign %>% filter(p.value < 0.05 & `s.Low Marsh` == 1) %>%
-  rownames_to_column(var="amplicon") %>% 
-  left_join(tax_table(phylo_elevation) %>% data.frame() %>% rownames_to_column(var="amplicon"))
-
-
-
-high_marsh_root <- indsp_root$sign %>% filter(p.value < 0.05 & `s.High Marsh` == 1) %>%
-  rownames_to_column(var="amplicon") %>% 
-  left_join(tax_table(phylo_elevation) %>% data.frame() %>% rownames_to_column(var="amplicon"))
-
-low_marsh_root <- indsp_root$sign %>% filter(p.value < 0.05 & `s.Low Marsh` == 1) %>%
-  rownames_to_column(var="amplicon") %>% 
-  left_join(tax_table(phylo_elevation) %>% data.frame() %>% rownames_to_column(var="amplicon"))
-
-
-high_marsh_rhizosphere$Family %>% table() %>% sort() %>% tail(10) %>% data.frame()
-low_marsh_rhizosphere$Family %>% table() %>% sort() %>% tail(10) %>% data.frame()
 
 
