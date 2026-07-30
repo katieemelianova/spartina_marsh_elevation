@@ -338,6 +338,12 @@ root_plot <- root_da_annot %>%
   ggtitle("Root")
 
 
+############################################################
+#             suppplemnetary full tale of DA taxa          #
+############################################################
+
+writexl::write_xlsx(root_da_annot, "TableS1_root_differentially_abundant.xlsx") 
+writexl::write_xlsx(sediment_da_annot, "TableS2_rhizosphere_differentially_abundant.xlsx") 
 
 ############################################################
 #             plot differential abundance.                 #
