@@ -9,6 +9,7 @@ library(phyloseq)
 library(ggsignif)
 library(tibble)
 library(MetBrewer)
+library(vegan)
 
 ##################################################
 #.           read in data and filter             #
@@ -67,11 +68,8 @@ phylo_elevation@sam_data$Sample.description <- case_when(phylo_elevation@sam_dat
 #           transform and ordinate         #
 ############################################
 
-phylo_elevation_prop <- transform_sample_counts(phylo_elevation, function(otu) otu/sum(otu))
-ord.nmds.bray_elevation <- ordinate(phylo_elevation_prop, method="NMDS", distance="bray")
-
-
-
+phylo_elevation_rarefied <- rarefy_even_depth(phylo_elevation, sample.size = min(sample_sums(phylo_elevation)), rngseed = 1, replace = TRUE, trimOTUs = TRUE, verbose = TRUE)
+ord.nmds.bray_elevation <- ordinate(phylo_elevation_rarefied, method="PCoA", distance="bray")
 
 ordination_plot <- plot_ordination(phylo_elevation_prop, ord.nmds.bray_elevation, shape="Compartment", color="Elevation", title="Bray NMDS") + 
   geom_point(size = 9) +
@@ -86,13 +84,27 @@ ordination_plot <- plot_ordination(phylo_elevation_prop, ord.nmds.bray_elevation
   scale_colour_manual(values = c("#A67355", "#7da7ea"))
 
 
-  
+phylo_elevation_prop <- transform_sample_counts(phylo_elevation, function(otu) otu/sum(otu))
+
+
+
+
+
+metadata <- as(sample_data(phylo_elevation_rarefied), "data.frame")
+dist_matrix <- distance(phylo_elevation_rarefied, method = "bray")
+permanova_result <- adonis2(dist_matrix ~ Compartment * Elevation, data = metadata, permutations = 999)
+print(permanova_result)
+
+
 
 ###################################################
 #         heatmap of  dominant orders           #
 ###################################################
 
 abundance_threshold <- 0.01
+
+
+phylo_elevation_prop %>% subset_taxa()
 
 marsh_high_filt <- phylo_elevation_prop %>%
   subset_samples(Sample.description == "High Marsh Rhizosphere") %>%
@@ -117,8 +129,11 @@ root_low_filt <- phylo_elevation_prop %>%
 
 phylo_elevation_prop_filt <- merge_phyloseq(root_low_filt, marsh_low_filt, root_high_filt, marsh_high_filt)
 
+abundance_filtered_families <- phylo_elevation_prop_filt@tax_table %>% data.frame() %>% pull(Family)
 
-heatmap <- phylo_elevation_prop_filt %>% 
+
+heatmap <- phylo_elevation_prop %>% 
+  subset_taxa(Family %in% abundance_filtered_families & Family != "Incertae Sedis") %>%
   tax_glom("Family") %>% 
   ps_mutate(Elevation = case_when(Elevation == "Low Marsh" ~"(Low)",
                                   Elevation == "High Marsh" ~"(High)")) %>%
@@ -133,7 +148,12 @@ heatmap <- phylo_elevation_prop_filt %>%
         strip.text = element_text(size = 32),
         axis.text.x = element_blank(),
         axis.ticks.x = element_blank()) +
-  facet_wrap(~factor(Compartment, c("Root", "Rhizosphere"))+factor(Elevation, c("(Low)", "(High)")), scales = "free_x", nrow = 1)
+  facet_wrap(~factor(Compartment, c("Root", "Rhizosphere"))+factor(Elevation, c("(Low)", "(High)")), scales = "free_x", nrow = 1) +
+  scale_fill_gradient(
+    low = "black",
+    high = "skyblue",
+    labels = label_number(accuracy = 0.001)
+  )
 
 # change the decomal places of the hratmap
 heatmap$scales$scales[[3]]$labels <- function(x) sprintf("%.3f", x)
@@ -171,7 +191,7 @@ all_sulfur_oxidising_box <- subset_taxa(phylo_elevation_prop, Family %in% c("Arc
   scale_fill_manual(values=c("#fe9b00", "#2b9b81"))
 
 
-png("Figure3.png", height = 1300, width=2100)
+png("Figure3.png", height = 1400, width=2200)
 (heatmap + all_sulfur_oxidising_box) + plot_layout(widths=c(2, 1.1)) + plot_annotation(tag_levels = 'A') & theme(plot.tag = element_text(size = 40))
 dev.off()
 
